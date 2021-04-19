@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -203,16 +204,6 @@ func download(key *string, book *Book, fileName string) {
 		return
 	}
 	defer res.Body.Close()
-	// bytes, err := ioutil.ReadAll(res.Body)
-	// if err != nil {
-	// 	fmt.Print(err)
-	// 	return
-	// }
-	// body := string(bytes)
-
-	// fmt.Print(GbkToUtf8(&body))
-
-	// bufReader := bufio.NewReader(res.Body)
 
 	file, err := os.Create(fullPath)
 	if err != nil {
@@ -228,16 +219,63 @@ func download(key *string, book *Book, fileName string) {
 		return
 	}
 
-	// writer := bufio.NewWriter(file)
-	// bytes := make([]byte, 1024*1024)
-	// for {
-	// 	len, err := bufReader.Read(bytes)
-	// 	if len < 0 || err != nil {
-	// 		break
-	// 	}
+	filenameWithSuffix := path.Base(fullPath)                  //获取文件名带后缀
+	fileSuffix := path.Ext(filenameWithSuffix)                 //获取文件后缀
+	name := strings.TrimSuffix(filenameWithSuffix, fileSuffix) //获取文件名
 
-	// 	writer.Write(bytes[:len])
-	// }
+	rewriteID3v2(file, &name)
+
+	rewriteID3v1(file, &name)
+
+}
+
+func rewriteID3v2(file *os.File, fileName *string) {
+
+	frame := map[string]string{
+		"TIT2": *fileName,
+		"TPE1": "",
+		"TALB": "",
+		"TCON": "",
+		"COMM": "eng\000",
+		"TYER": "",
+	}
+
+	bytes := make([]byte, 4086)
+	index := 0
+	for key := range frame {
+		keyBytes := []byte(key)
+		kLen := len(keyBytes)
+		for i := 0; i < kLen; i++ {
+			bytes[index+i] = keyBytes[i]
+		}
+		index += 11
+		v, _ := frame[key]
+		contentBytes := []byte(v)
+		vLen := len(contentBytes)
+		bytes[index-4] = byte(vLen + 1)
+		for i := 0; i < vLen; i++ {
+			bytes[index+i] = contentBytes[i]
+		}
+		index += vLen
+	}
+
+	file.WriteAt(bytes, 10)
+}
+
+func rewriteID3v1(file *os.File, fileName *string) {
+	bytes := make([]byte, 124)
+	nameBytes := []byte(*fileName)
+	n := len(nameBytes)
+	if n > 30 {
+		n = 30
+	}
+	for i := 0; i < n; i++ {
+		bytes[i] = nameBytes[i]
+	}
+
+	fileInfo, _ := file.Stat()
+	offset := fileInfo.Size() - 125
+	file.WriteAt(bytes, offset)
 }
 
 func GbkToUtf8(s *string) string {
