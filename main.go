@@ -56,9 +56,13 @@ func (w *WriteCounter) PrintProgress() {
 
 func main() {
 	var url string
-	var quantity int
+	var threadQuantity int
+	var start int
+	var end int
 	flag.StringVar(&url, "u", "", "请求地址")
-	flag.IntVar(&quantity, "q", 10, "下载线程的数量")
+	flag.IntVar(&threadQuantity, "q", 10, "下载线程的数量")
+	flag.IntVar(&start, "s", 0, "下载开始的位置")
+	flag.IntVar(&end, "e", 0, "下载结束的位置")
 	flag.Parse()
 	if len(url) == 0 {
 		fmt.Print("请输入Url地址")
@@ -67,7 +71,7 @@ func main() {
 
 	book := &Book{}
 	var key = ""
-	ch := make(chan *Download, quantity)
+	ch := make(chan *Download, threadQuantity)
 
 	c := colly.NewCollector()
 
@@ -100,30 +104,41 @@ func main() {
 		}
 	})
 
+	downloadQuantity := 0
 	c.OnHTML(".main03>.summary>.list>ul>li", func(h *colly.HTMLElement) {
 		gbkTitle := h.ChildText("a")
 		title := GbkToUtf8(&gbkTitle)
 		url := h.ChildAttr("a", "href")
 		// fmt.Printf("%s %s \n", title, url)
 		if len(title) > 0 {
-			if len(key) == 0 {
-				for {
-					k, err := getKey(&url)
-					if err == nil {
-						fmt.Print("get key complate \n")
-						key = k
-						break
+			if start <= 0 {
+				if end > 0 {
+					if downloadQuantity >= end {
+						return
+					}
+					downloadQuantity++
+				}
+				if len(key) == 0 {
+					for {
+						k, err := getKey(&url)
+						if err == nil {
+							fmt.Print("get key complate \n")
+							key = k
+							break
+						}
 					}
 				}
-			}
-			if len(key) > 0 {
-				wg.Add(1)
+				if len(key) > 0 {
+					wg.Add(1)
 
-				ch <- &Download{
-					book:  book,
-					key:   &key,
-					title: title,
+					ch <- &Download{
+						book:  book,
+						key:   &key,
+						title: title,
+					}
 				}
+			} else {
+				start--
 			}
 		}
 	})
@@ -230,9 +245,9 @@ func download(key *string, book *Book, fileName string) {
 }
 
 func rewriteID3v2(file *os.File, fileName *string) {
-
+	gbkTitle := Utf8ToGbk(fileName)
 	frame := map[string]string{
-		"TIT2": *fileName,
+		"TIT2": gbkTitle,
 		"TPE1": "",
 		"TALB": "",
 		"TCON": "",
@@ -286,6 +301,16 @@ func GbkToUtf8(s *string) string {
 		panic(err)
 	}
 	return string(utf8Bytes)
+}
+
+func Utf8ToGbk(s *string) string {
+	buf := []byte(*s)
+	gbkReader := transform.NewReader(bytes.NewReader(buf), simplifiedchinese.GBK.NewEncoder())
+	gbkBytes, err := ioutil.ReadAll(gbkReader)
+	if err != nil {
+		panic(err)
+	}
+	return string(gbkBytes)
 }
 
 func Exists(path string) (bool, error) {
