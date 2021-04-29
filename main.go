@@ -279,7 +279,8 @@ func rewriteID3v2(file *os.File, fileName *string) {
 
 func rewriteID3v1(file *os.File, fileName *string) {
 	bytes := make([]byte, 124)
-	nameBytes := []byte(*fileName)
+	gbkTitle := Utf8ToGbk(fileName)
+	nameBytes := []byte(gbkTitle)
 	n := len(nameBytes)
 	if n > 30 {
 		n = 30
